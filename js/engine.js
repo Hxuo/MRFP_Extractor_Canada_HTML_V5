@@ -41,6 +41,10 @@ const blackrock={key:'blackrock',label:'BlackRock / iShares',style:'blackrock',s
 const rbc={key:'rbc',label:'RBC Global Asset Management',style:'rbc',signatures:[/RBC Global Asset Management Inc/i,/rbcgam\.com/i,/RBC CANADIAN/i],title:/^\s*(RBC\s+[^\n]{3,120}?(?:FUND|PORTFOLIO|SOLUTION\s*[–-]\s*ENHANCED(?:\s+PLUS)?))\s*$/im};
 // BMO issues two independent financial-table templates: mutual funds and exchange-traded funds.
 const bmo={key:'bmo',label:'BMO',style:'bmo',signatures:[/BMO (?:Asset Management|Investments) Inc\./i,/\bbmogam\.com\b/i,/\bBMO (?:Mutual Funds|Exchange Traded Funds)\b/i],title:/^\s*(BMO\s+[^\n]{4,110}?(?:Fund(?:\s+Ltd\.)?|ETF|Portfolio))\s*$/im};
+// BMG bullion reports may be scanned as landscape two-page spreads with rotated PDF text.
+const bmg={key:'bmg',label:'BMG Management Services Inc.',style:'bmg_rotated',
+ signatures:[/\bBMG\s+(?:Management Services Inc\.|Gold|Silver|BullionFund)/i,/\bBMG\s+(?:Silver|Gold|Bullion)\s+Bullion\s*Fund\b/i,/\bbmg-group\.com\b/i],
+ title:/^\s*(BMG\s+[^\n]{3,110}?Bullion\s*Fund)\s*$/im};
 
 
 // ---- src/fmc/index.mjs ----
@@ -50,7 +54,7 @@ const bmo={key:'bmo',label:'BMO',style:'bmo',signatures:[/BMO (?:Asset Managemen
 const firstTrust={key:'first_trust',label:'First Trust Canada',style:'first_trust_b3',
   signatures:[/FT Portfolios Canada Co\./i,/First Trust AlphaDEX[^\n]{0,160}ETF/i,/www\.firsttrust\.ca/i],
   title:/^\s*(First Trust\s+[^\n]{8,180}?ETF)\s*$/im};
-const REGISTRY=[desjardins,sunLife,franklin,middlefield,manulife,dynamic,purpose,blackrock,rbc,nbi,bmo,firstTrust];
+const REGISTRY=[desjardins,sunLife,franklin,middlefield,manulife,dynamic,purpose,blackrock,rbc,nbi,bmo,bmg,firstTrust];
 // Issuer-specific titles are evidence only when they occupy a full line near
 // the beginning of an MRFP. This also gives newly named fund families a narrow
 // fallback without weakening ratio/series parsing for any FMC.
@@ -58,7 +62,7 @@ const ISSUER_TITLE_PREFIX={
   nbi:/^NBI\s/i, desjardins:/^Desjardins\s/i, sun_life:/^Sun Life\s/i,
   franklin:/^Franklin\s/i, middlefield:/^Middlefield\s/i, first_trust:/^First Trust\s/i, manulife:/^Manulife\s/i,
   dynamic:/^Dynamic\s/i, purpose:/^Purpose\s/i, blackrock:/^iShares\s/i,
-  rbc:/^RBC\s/i, bmo:/^BMO\s/i, td:/^TD\s/i, lysander:/^Lysander\s/i,
+  rbc:/^RBC\s/i, bmo:/^BMO\s/i, bmg:/^BMG\s/i, td:/^TD\s/i, lysander:/^Lysander\s/i,
   nei:/^NEI\s/i, mackenzie:/^Mackenzie\s/i, ig_mackenzie:/^IG Mackenzie\s/i,
   fidelity:/^Fidelity\s/i, pender:/^Pender\s/i, brandes:/^Brandes\s/i,
   agf:/^AGF\s/i, harvest:/^Harvest\s/i, vanguard:/^Vanguard\s/i,
@@ -169,6 +173,17 @@ const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
 function identifyFund(pages,p){
   let head=pages.slice(0,5).map(x=>x.text).join('\n');
   
+  if(p.key==='bmg'){
+    // PDF.js can concatenate a BMG cover title with neighboring spread text;
+    // the original individual PDF text item retains the real full fund title.
+    const name=/^(BMG\s+(?!Fund\b)[A-Za-z0-9 &.'’-]{3,120}?\s*Bullion\s*Fund)$/i;
+    for(const pg of pages.slice(0,6)){
+      for(const item of pg.items||[]){const m=name.exec(clean(item.str));if(m)return m[1];}
+      for(const line of String(pg.text||'').split(/\r?\n/)){
+        const m=name.exec(clean(line));if(m)return m[1];
+      }
+    }
+  }
   // Ninepoint fund-name detection.
   // Handles split cover titles and dated page headings.
   if(p.key==='ninepoint'){
@@ -1161,7 +1176,12 @@ function parseGlobalX(pages){
  }
  return [];
 }
-
+// IG financial highlights sometimes omit the *printed* latest-year header
+// for the final series on a continuation page. The current-period numeric
+// column can still exist to the left of all labelled historical columns.
+// Recognize it only when the same physical half-page has a normal series
+// header for this report's year AND exactly one extra ratio value for each
+// metric. Never substitute the historical first-labelled-year value.
 function parseIgUnlabelledLatestColumn(pages){
  const year=Number(reportDate(pages)?.slice(0,4));
  if(!Number.isInteger(year)||year<2000)return [];
@@ -1204,14 +1224,13 @@ function parseIgUnlabelledLatestColumn(pages){
  }
  return [...new Map(out.map(r=>[r.cls,r])).values()];
 }
-
 function parseIgHistorical(pages,p){
- // Include a historically listed series even if no current-period column
- // exists; it remains a row with blanks instead of using older-year values.
+ // Include a historically listed series only if no validated current-period
+ // source exists; older-year ratios must not masquerade as current values.
  const found=parseMackenzie(pages), existing=new Set(found.map(x=>x.cls));
  for(const candidate of parseIgUnlabelledLatestColumn(pages)){
- if(!existing.has(candidate.cls)){found.push(candidate);existing.add(candidate.cls);}
-}
+  if(!existing.has(candidate.cls)){found.push(candidate);existing.add(candidate.cls);}
+ }
  for(const pg of pages){
   if(!/RATIOS AND SUPPLEMENTAL DATA/i.test(pg.text))continue;
   for(const col of [pg.leftText,pg.rightText]){
@@ -1814,11 +1833,122 @@ function ratioHeadingAudit(pages,p,parsed){
  const missing=[...potential].filter(x=>!actual.has(x.toLowerCase()));
  return potential.size ? {seen:potential.size,extracted:parsed.length,possibleMissing:missing} : null;
 }
+// BMG's landscape two-page MRFP spreads store the text rotated 90 degrees
+// in PDF coordinates. Never use the generic line scanner for these tables:
+// row identity is a native PDF x band, while year/value columns run along y.
+function bmgRotatedTables(pages){
+ const date=reportDate(pages),year=Number(date?.slice(0,4));
+ if(!year)return [];
+ const metricRe={MER:/^Management expense ratio\s*\(%\)/i,
+                 TER:/^Trading expense ratio\s*\(%\)/i,
+                 PTR:/^Portfolio turnover rate\s*\(%\)/i};
+ const out=[];
+ for(const pg of pages){
+  if(pg.ocrUsed||!Array.isArray(pg.items)||!pg.items.length)continue;
+  const items=pg.items.filter(it=>Number.isFinite(it.x)&&Number.isFinite(it.y));
+  const heads=items.map(it=>{const m=/^THE FUND[’']S NET ASSETS PER (CLASS\s+[A-Z][A-Z0-9-]*)\s+UNITS?$/i.exec(clean(it.str));
+    return m?{cls:m[1],at:it}:null;}).filter(Boolean);
+  for(const h of heads){
+   const sect=items.filter(it=>/^RATIOS AND SUPPLEMENTAL DATA\s*:/i.test(clean(it.str))
+    &&it.x>h.at.x+45&&it.x<h.at.x+230&&Math.abs(it.y-h.at.y)<9);
+   if(sect.length!==1)continue;
+   const yearHeads=items.filter(it=>clean(it.str)===String(year)&&Math.abs(it.x-h.at.x)<3.5
+     &&it.y>h.at.y+80&&it.y<h.at.y+360);
+   if(yearHeads.length!==1)continue;
+   const yearY=yearHeads[0].y,values={},evidence={};let quality=0,valid=true;
+   for(const [key,re] of Object.entries(metricRe)){
+    const labels=items.filter(it=>re.test(clean(it.str))&&it.x>sect[0].x+8&&it.x<sect[0].x+56
+      &&Math.abs(it.y-sect[0].y)<5);
+    if(labels.length!==1){valid=false;break;}
+    const label=labels[0];
+    // 2020 data lies below that year's printed heading, no fixed pixel positions.
+    const candidates=items.filter(it=>Math.abs(it.x-label.x)<1.6&&it.y>=yearY-3&&it.y<yearY+18
+      &&/^(?:\d+(?:\.\d+)?|[—–−-]{1,2}|n\/?a)$/i.test(clean(it.str)));
+    if(candidates.length!==1){valid=false;break;}
+    values[key]=toNumber(candidates[0].str);quality++;
+    evidence[key]={page:pg.page,source:key+' (BMG latest-year ratio table)',method:'native-js'};
+   }
+   if(valid&&quality===3)out.push({cls:h.cls.replace(/^class/i,'Class'),values,evidence,quality});
+  }
+ }
+ return [...new Map(out.map(r=>[r.cls.toLowerCase(),r])).values()];
+}
+// BMG also publishes upright (single-page) Financial Highlights reports.
+// Parse by actual Class heading, current-year column and ratio-row coordinates;
+// PDF.js may split years, class headings and decimals into adjacent glyph runs.
+function bmgUprightTables(pages){
+ const date=reportDate(pages),year=Number(date?.slice(0,4));
+ if(!year)return [];
+ const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ const definitions={MER:/^MANAGEMENTEXPENSERATIO(?!BEFORE)/,
+  TER:/^TRADINGEXPENSERATIO/,PTR:/^PORTFOLIOTURNOVERRATE/};
+ const result=[];
+ for(const page of pages){
+  if(page.ocrUsed||!Array.isArray(page.items)||!page.items.length)continue;
+  const lines=[];
+  for(const it of page.items){
+   if(typeof it.str!=='string'||!it.str.trim()||!Number.isFinite(it.x)||!Number.isFinite(it.y))continue;
+   let l=lines.find(x=>Math.abs(x.y-it.y)<2.4);
+   if(!l){l={y:it.y,items:[]};lines.push(l);}l.items.push(it);
+  }
+  lines.forEach(l=>l.items.sort((a,b)=>a.x-b.x));
+  lines.sort((a,b)=>b.y-a.y);
+  const titleOf=l=>norm(l.items.filter(i=>i.x<300).map(i=>i.str).join(''));
+  const heads=lines.map((l,idx)=>{
+   const m=/^THEFUNDSNETASSETSPERCLASS([A-Z][A-Z0-9]*)UNITS?$/.exec(titleOf(l));
+   return m?{cls:'Class '+m[1],index:idx,line:l}:null;
+  }).filter(Boolean);
+  for(let n=0;n<heads.length;n++){
+   const h=heads[n],end=heads[n+1]?.index??lines.length,band=lines.slice(h.index+1,end);
+   // Detect the first reporting-year column from the header, even if 2019
+   // appears as two separately positioned PDF.js tokens: "201" + "9".
+   const titleItems=h.line.items.filter(it=>it.x<300);
+   const titleEnd=Math.max(...titleItems.map(it=>it.x+it.w));
+   const yrItems=h.line.items.filter(it=>it.x>titleEnd+14&&/^\d/.test(it.str)).sort((a,b)=>a.x-b.x);
+   if(!yrItems.length)continue;
+   const yrStart=yrItems[0].x;
+   const firstYearParts=[];let last=null,nextYearX=null;
+   for(const it of yrItems){
+    if(last&&it.x-(last.x+last.w)>13){nextYearX=it.x;break;}
+    firstYearParts.push(it.str.replace(/\D/g,''));last=it;
+   }
+   if(firstYearParts.join('')!==String(year))continue;
+   if(!nextYearX){ // Single-year tables also occur; no adjacent prior-year cell.
+    nextYearX=yrStart+Math.max(42,Number(page.width||600)*.07);
+   }
+   const startX=yrStart-14,stopX=yrStart+(nextYearX-yrStart)/2;
+   const section=band.filter(l=>/^RATIOSANDSUPPLEMENTALDATA/.test(titleOf(l)));
+   if(section.length!==1)continue;
+   const metrics={},evidence={};let valid=true;
+   for(const [metric,re] of Object.entries(definitions)){
+    const labelRows=band.filter(l=>l.y<section[0].y-4&&re.test(titleOf(l)));
+    if(labelRows.length!==1){valid=false;break;}
+    const l=labelRows[0];
+    const parts=l.items.filter(it=>it.x>=startX&&it.x<stopX)
+     .sort((a,b)=>a.x-b.x);
+    if(!parts.length){valid=false;break;}
+    // Join only the validated current-year cell; no cross-column joining.
+    const literal=parts.map(it=>it.str.replace(/\s/g,'')).join('');
+    if(!/^(?:\d+(?:\.\d+)?|\.\d+|[—–−-]{1,2}|n\/?a)$/i.test(literal)){
+     valid=false;break;
+    }
+    metrics[metric]=toNumber(literal);
+    evidence[metric]={page:page.page,source:metric+' (BMG upright latest-year table)',method:'native-js'};
+   }
+   if(valid)result.push({cls:h.cls,values:metrics,evidence,quality:3});
+  }
+ }
+ return [...new Map(result.map(r=>[r.cls.toLowerCase(),r])).values()];
+}
 function analyzePages(pages,{onProgress=()=>{}}={}){
  const p=detectFmc(pages);if(!p)return {results:[],diagnostics:[{warning:'Unrecognized or ambiguous FMC; no financial values guessed.'}],raw:[],profile:null};
  const fund=identifyFund(pages,p);const date=p.key==='middlefield'?middlefieldReportDate(pages):p.key==='brandes'?brandesDate(pages):reportDate(pages);
  let parsed=[];
- if(p.style==='bmo'){parsed=bmoTable(pages);
+ if(p.key==='bmg'){
+  const rotated=bmgRotatedTables(pages),upright=bmgUprightTables(pages);
+  parsed=[...new Map([...rotated,...upright].map(r=>[r.cls.toLowerCase(),r])).values()];
+ }
+ else if(p.style==='bmo'){parsed=bmoTable(pages);
  const more=parseBmoAccumulating(pages);for(const r of more)if(!parsed.some(x=>x.cls===r.cls))parsed.push(r);}
  else if(p.key==='first_trust')parsed=parseFirstTrust(pages);
  else if(EXTRA_STYLES.has(p.style))parsed=parseAdditional(pages,p);
