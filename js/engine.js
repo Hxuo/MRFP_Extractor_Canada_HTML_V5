@@ -44,7 +44,7 @@ const bmo={key:'bmo',label:'BMO',style:'bmo',signatures:[/BMO (?:Asset Managemen
 // BMG bullion reports may be scanned as landscape two-page spreads with rotated PDF text.
 const bmg={key:'bmg',label:'BMG Management Services Inc.',style:'bmg_rotated',
  signatures:[/\bBMG\s+(?:Management Services Inc\.|Gold|Silver|BullionFund)/i,/\bBMG\s+(?:Silver|Gold|Bullion)\s+Bullion\s*Fund\b/i,/\bbmg-group\.com\b/i],
- title:/^\s*(BMG\s+[^\n]{3,110}?Bullion\s*Fund)\s*$/im};
+ title:/^\s*(BMG\s+(?:[^\n]{3,110}?\s+)?Bullion\s*Fund)\s*$/im};
 
 
 // ---- src/fmc/index.mjs ----
@@ -80,7 +80,7 @@ function issuerTitleCandidate(pages,profile){
   const re=profile.title&&new RegExp(profile.title.source,profile.title.flags.replace(/g/g,''));
   const prefix=ISSUER_TITLE_PREFIX[profile.key];
   const genericEnd=/(?:\bFund|\bPortfolio|\bETF|\bClass|\bPool)(?:[®™]|\.)?$/i;
-  for(const pg of pages.slice(0,3)){
+  for(const pg of pages.slice(0,profile.key==='bmg'?6:3)){
     for(const raw of String(pg.text||'').split(/\r?\n/).slice(0,100)){
       const line=reportTitleLine(raw);
       if(line.length<12||line.length>190)continue;
@@ -176,7 +176,7 @@ function identifyFund(pages,p){
   if(p.key==='bmg'){
     // PDF.js can concatenate a BMG cover title with neighboring spread text;
     // the original individual PDF text item retains the real full fund title.
-    const name=/^(BMG\s+(?!Fund\b)[A-Za-z0-9 &.'’-]{3,120}?\s*Bullion\s*Fund)$/i;
+    const name=/^(BMG\s+(?:(?!Fund\b)[A-Za-z0-9 &.'’-]{3,120}?\s+)?Bullion\s*Fund)$/i;
     for(const pg of pages.slice(0,6)){
       for(const item of pg.items||[]){const m=name.exec(clean(item.str));if(m)return m[1];}
       for(const line of String(pg.text||'').split(/\r?\n/)){
