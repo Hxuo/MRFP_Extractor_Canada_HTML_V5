@@ -1,0 +1,287 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MRFP Extractor Canada — Browser v5</title>
+<link rel="icon" type="image/png" href="./Assets/Icons/LSEG.jpg">
+<link rel="stylesheet" href="css/style.css"></head><body>
+<header class="app-header">
+  <div class="app-brand"><h1>MRFP Extractor Canada <span>Browser v5</span></h1><small>Automated Management Expense · Trading Expense · Portfolio Turnover</small></div>
+  <nav class="topnav" aria-label="Main navigation">
+    <button type="button" class="nav-btn is-active" data-page="extract" aria-current="page"><span aria-hidden="true">▤</span> Extract</button>
+    <button type="button" class="nav-btn" data-page="history"><span aria-hidden="true">◷</span> History</button>
+    <button type="button" class="nav-btn" data-page="reports"><span aria-hidden="true">▥</span> Reports</button>
+    <button type="button" class="nav-btn" data-page="settings" id="settingsOpen"><span aria-hidden="true">⚙</span> Settings</button>
+  </nav>
+</header>
+<div id="extractPage" class="app-page"><div class="toolbar" id="uploadZone"><label class="pick">Choose PDFs <input id="pdf" type="file" accept="application/pdf,.pdf" multiple></label><span id="filename">No PDFs selected</span><button id="extract">Extract selected PDFs <span>→</span></button><span id="status" role="status">Ready</span></div>
+<div id="libnotice" class="libnotice">PDF.js library loading…</div>
+<div class="progress" id="progress" aria-hidden="true"><div id="progressBar"></div></div>
+<div class="batch-panel" id="batchPanel">
+  <div class="batch-panel-title"><div><strong>Upload queue <span id="batchCount">0 / 5 files selected</span></strong><p>Select or drop up to five PDFs; each is scanned sequentially with the existing extraction engine.</p></div><button id="newBatch" class="ghost" type="button">Clear batch</button></div>
+  <div id="batchList" class="batch-list" aria-label="Selected documents"><span class="muted">Choose PDF files to prepare a batch.</span></div>
+  <div id="batchSummary" class="batch-summary hidden" aria-live="polite"></div>
+</div>
+<div id="historyReturn" class="history-return hidden"><button type="button" id="backToHistory" class="ghost">← Back to History</button><span id="historyStatus"></span></div>
+<main><section class="pane">
+    
+<div class="sectiontitle">
+  <h2>Extraction results</h2>
+
+    <div class="export-actions">
+        <a id="download" class="hidden" href="#">
+            Export Data ↓
+        </a>
+
+        <a id="exportAll" href="#">
+            Export All Data ↓
+        </a>
+
+        <a id="exportListed" class="hidden" href="#" title="Export every fund currently in Recent Documents">
+            Export All Listed ↓
+        </a>
+</div>
+
+</div>
+
+<div id="overview" class="empty"><div class="emptyIcon">▤</div>Upload a fund report and click <b>Extract ratios</b>.<br><small>MER, TER and portfolio turnover are detected automatically.</small></div>
+<div id="result"></div><div id="details"></div>
+<div id="fallback" class="hidden"><h3>Fallback: paste PDF text</h3><p class="muted">If the PDF library cannot load, copy the text from the PDF in your PDF viewer and paste here. Page breaks may be marked with [PAGE]. This is less reliable than direct PDF extraction.</p><textarea id="manualText" placeholder="Paste MRFP text here…"></textarea><button id="extractText">Extract pasted text</button></div>
+
+
+<div id="actions" class="hidden">
+  <button id="verify" class="secondary">
+    Mark results as verified
+  </button>
+
+  <button id="rescan" class="ghost" type="button">
+    Re-scan PDF
+  </button>
+
+  <small>
+    Verification is optional. Never automatically trains the OCR model.
+  </small>
+</div>
+
+<div id="rescanPanel" class="hidden" role="region"
+     aria-label="Re-scan comparison">
+
+  <div class="sectiontitle">
+    <h2>Review Re-scan Results</h2>
+  </div>
+
+  <p class="muted" id="rescanMessage">
+    Compare the current results with the proposed extraction.
+  </p>
+
+  <div id="rescanComparison" class="scroller"></div>
+
+  <div class="rescan-controls">
+    <button id="rescanCancel" class="ghost" type="button">
+      No, Cancel
+    </button>
+
+    <button id="rescanConfirm" class="secondary" type="button">
+      Yes, Replace Results
+    </button>
+  </div>
+</div>
+
+
+<section id="recentDocuments" class="recent-documents" aria-labelledby="recentDocumentsTitle">
+  <div class="sectiontitle recent-heading">
+    <div class="recent-heading-label"><h2 id="recentDocumentsTitle">Recent Documents</h2><span id="recentCount" class="recent-count">0 listed</span></div>
+    <div class="history-controls">
+      <button id="reloadHistory" class="ghost" type="button">Refresh</button>
+      <button id="clearList" class="ghost" type="button">Clear List</button>
+    </div>
+  </div>
+  <div id="history" class="recent-list" aria-live="polite"><p class="muted">No recent documents. Extract or restore a saved fund.</p></div>
+  <div class="recent-footer">
+    <span>Export All Listed uses these documents only. Your saved History stays separate.</span>
+    <button id="viewAllHistory" type="button" class="ghost">View All Saved History →</button>
+  </div>
+</section>
+
+</section><section class="pane right"><div class="sectiontitle"><h2>PDF viewer</h2><span class="muted">Source document</span></div><div id="pdfEvidence" class="pdf-evidence hidden" aria-label="PDF.js document evidence viewer">
+ <div class="evidence-toolbar"><button id="evidencePrev" class="ghost" type="button" aria-label="Previous PDF page">‹</button><span id="evidencePage">1 / 1</span><button id="evidenceNext" class="ghost" type="button" aria-label="Next PDF page">›</button><input id="evidencePageInput" type="number" min="1" placeholder="Page" aria-label="Go to PDF page"><span class="evidence-toolbar-spacer"></span><button id="evidenceZoomOut" class="ghost" type="button" aria-label="Zoom out">−</button><span id="evidenceZoom">115%</span><button id="evidenceZoomIn" class="ghost" type="button" aria-label="Zoom in">+</button></div>
+ <div id="evidenceStatus" class="evidence-status" role="status" aria-live="polite"></div>
+ <div id="evidenceScroll" class="evidence-scroll"><div id="evidencePages" class="evidence-pages"></div></div>
+ </div><iframe id="viewer" class="hidden" title="Original PDF fallback preview"></iframe><div id="pdfUnavailable" class="pdf-unavailable hidden" role="status">No PDF selected.</div></section></main>
+</div><!-- extractPage -->
+<section id="historyPage" class="app-page content-page hidden" aria-labelledby="historyTitle">
+  <div class="page-heading"><div><h2 id="historyTitle">Extraction History</h2><p>Search, review, and manage saved MRFP documents in this browser.</p></div><button id="historyRefresh" class="ghost" type="button">↻ Refresh</button></div>
+  <div class="history-filters"><label>Search fund or filename<input id="historySearch" type="search" placeholder="Search by fund name or filename…"></label><label>Period<select id="historyPeriod"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label></div>
+  <div class="table-shell"><table class="library-table"><thead><tr><th>Date extracted ↓</th><th>Fund name / file</th><th>Classes</th><th>MRFP date</th><th>Status</th><th>Actions</th></tr></thead><tbody id="historyRows"><tr><td colspan="6">Loading history…</td></tr></tbody></table></div>
+  <div class="table-footer"><span id="historyTotal">0 records</span><div><label>Rows per page <select id="historyPageSize"><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label><button class="ghost" id="historyPrevious" type="button">← Previous</button><span id="historyPageNumber">1 of 1</span><button class="ghost" id="historyNext" type="button">Next →</button></div></div>
+
+</section>
+<section id="reportsPage" class="app-page content-page hidden" aria-labelledby="reportsTitle">
+ <div class="page-heading"><div><h2 id="reportsTitle">Reports</h2><p>Extraction coverage and review statistics based on actual saved data—not independently validated accuracy.</p></div><div class="report-controls"><select id="reportPeriod" aria-label="Report period"><option value="all">All time</option><option value="month">This month</option><option value="30">Last 30 days</option><option value="7">Last 7 days</option></select><button id="reportExport" type="button" class="secondary">↓ Export report CSV</button></div></div>
+ <div id="reportStats" class="report-stats"></div>
+ <div class="report-grid"><article class="report-card"><h3>Classes by fund</h3><div id="reportFundBars"></div></article><article class="report-card"><h3>Review status</h3><div id="reportVerifyBars"></div></article></div>
+ <div class="report-card report-table"><h3>Saved fund results</h3><div class="scroller"><table><thead><tr><th>Fund name</th><th>Classes</th><th>MER populated</th><th>TER populated</th><th>PTR populated</th><th>Missing cells</th><th>Verification</th></tr></thead><tbody id="reportRows"></tbody></table></div></div>
+</section>
+<section id="settingsPage" class="app-page content-page hidden" aria-labelledby="settingsPageTitle">
+ <div class="page-heading"><div><h2 id="settingsPageTitle">Settings</h2><p>Functional browser preferences and safe local history management.</p></div><span class="version-tag">Browser v5</span></div>
+ <div class="settings-tabs" role="tablist" aria-label="Settings sections"><button class="setting-tab is-active" data-setting="general" type="button">General</button><button class="setting-tab" data-setting="extraction" type="button">Extraction</button><button class="setting-tab" data-setting="storage" type="button">Storage</button><button class="setting-tab" data-setting="about" type="button">About</button></div>
+ <div class="settings-main" id="settingsGeneral"><h3>Application</h3><div class="preference-row"><label for="prefTheme">Theme</label><select id="prefTheme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div><div class="preference-row"><label for="prefLanding">Default landing page</label><select id="prefLanding"><option value="extract">Extract</option><option value="history">History</option><option value="reports">Reports</option><option value="settings">Settings</option></select></div><p class="settings-helper">Preferences are saved locally in this browser.</p></div>
+ <div class="settings-main hidden" id="settingsExtraction"><h3>Extraction</h3><div class="preference-row"><label for="prefOCR">OCR for pages with little or no native text</label><input id="prefOCR" type="checkbox" checked></div><p class="settings-helper">The existing PDF.js and Tesseract fallback is used only on pages whose extracted native text is shorter than 40 characters. Turning OCR off never changes the FMC parsing engine.</p><div class="preference-row"><span>Maximum PDFs per batch</span><b>5 (fixed)</b></div><p class="settings-helper">Batch processing is always sequential and individual saved results are never automatically marked verified.</p></div>
+ <div class="settings-main hidden" id="settingsStorage"><h3>Local history and storage</h3><p id="storageOverview" class="settings-helper">Loading storage information…</p><div class="settings-actions"><button id="backupHistory" class="ghost" type="button">↓ Export history backup (JSON)</button><label class="import-label ghost">↑ Import history backup (JSON)<input id="importHistory" type="file" accept=".json,application/json" hidden></label><button id="openLegacySettings" class="ghost" type="button">Manage stored PDFs / reset</button></div><p class="settings-helper">The JSON backup stores results, edits, evidence and verification only—not PDF copies. Import skips existing records instead of overwriting them. Browser history depends on origin and browser profile; use this backup before moving folders or browsers.</p></div>
+ <div class="settings-main hidden" id="settingsAbout"><h3>MRFP Extractor Canada Browser v5</h3><p>Runs locally in the browser with PDF.js and optional OCR. Existing v3.1 fund parsers, IndexedDB database name, verification workflow and workbook format remain in use.</p><p class="settings-helper">Processing completion and user verification are different states. Completeness statistics do not establish independently confirmed accuracy.</p></div>
+</section>
+
+
+<!-- SAVE MANUAL CORRECTION MODAL -->
+<dialog id="editConfirmModal"
+        class="settings-dialog action-confirm-dialog"
+        aria-labelledby="editConfirmTitle">
+
+  <div class="dialog-head">
+    <div>
+      <h2 id="editConfirmTitle">Save Manual Correction?</h2>
+      <p class="muted">Review the changes before saving.</p>
+    </div>
+    <button type="button" class="dialog-close"
+            id="editConfirmClose" aria-label="Cancel">×</button>
+  </div>
+
+  <div class="action-confirm-body">
+    <p class="action-subject" id="editConfirmSubject"></p>
+
+    <div class="edit-change-list" id="editChangeList"></div>
+
+    <div class="action-hint">
+      <span class="action-hint-icon">i</span>
+      <p>
+        Saving a manual correction resets this document's
+        verification status to <strong>Unverified</strong>.
+      </p>
+    </div>
+  </div>
+
+  <div class="dialog-actions action-dialog-actions">
+    <button type="button" id="editConfirmCancel"
+            class="ghost">Cancel</button>
+    <button type="button" id="editConfirmSave"
+            class="secondary">Save Correction</button>
+  </div>
+</dialog>
+
+
+<!-- CLEAR RECENT DOCUMENTS MODAL -->
+<dialog id="clearListModal"
+        class="settings-dialog action-confirm-dialog"
+        aria-labelledby="clearListTitle">
+
+  <div class="dialog-head">
+    <div>
+      <h2 id="clearListTitle">Clear Recent Documents?</h2>
+      <p class="muted">
+        Remove documents from the current Recent Documents list.
+      </p>
+    </div>
+    <button type="button" class="dialog-close"
+            id="clearListClose" aria-label="Cancel">×</button>
+  </div>
+
+  <div class="action-confirm-body">
+    <div class="action-hint">
+      <span class="action-hint-icon">i</span>
+      <p>
+        Saved history, extracted results, manual corrections,
+        verification records, and stored PDF copies
+        <strong>will remain available</strong>
+        in this browser. The upload batch and currently open PDF will also remain unchanged.
+      </p>
+    </div>
+  </div>
+
+  <div class="dialog-actions action-dialog-actions">
+    <button type="button" id="clearListCancel"
+            class="ghost">Cancel</button>
+    <button type="button" id="clearListProceed"
+            class="danger-button">Clear List</button>
+  </div>
+</dialog>
+
+
+<!-- RE-SCAN CONFIRMATION MODAL -->
+<dialog
+  id="rescanReplaceDialog"
+  class="settings-dialog action-confirm-dialog"
+  aria-labelledby="rescanReplaceTitle"
+>
+  <form method="dialog">
+
+    <div class="dialog-head">
+      <div>
+        <h2 id="rescanReplaceTitle">
+          Replace Re-scan Results?
+        </h2>
+        <p class="muted">
+          Confirm before replacing your saved extraction.
+        </p>
+      </div>
+
+      <button
+        type="submit"
+        value="cancel"
+        class="dialog-close"
+        aria-label="Cancel"
+      >×</button>
+    </div>
+
+    <div class="action-confirm-body">
+      <p
+        id="rescanReplaceSummary"
+        class="action-subject"
+      ></p>
+
+      <div class="action-hint">
+        <span class="action-hint-icon">!</span>
+        <p>
+          Replacing the results will discard existing
+          manual corrections and reset verification
+          to <strong>Unverified</strong>.
+          Cancel keeps your saved data unchanged.
+        </p>
+      </div>
+    </div>
+
+    <div class="dialog-actions action-dialog-actions">
+      <button
+        type="submit"
+        value="cancel"
+        class="ghost"
+      >
+        Cancel
+      </button>
+
+      <button
+        type="submit"
+        value="replace"
+        class="danger-button"
+      >
+        Replace Results
+      </button>
+    </div>
+
+  </form>
+</dialog>
+
+
+<dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
+ <div class="dialog-head"><div><h2 id="settingsTitle">Settings</h2><p class="muted">Manage data saved in this browser only.</p></div><button type="button" class="dialog-close" id="settingsClose" aria-label="Close settings">×</button></div>
+ <div class="settings-option"><div><h3>Clear Stored PDFs</h3><p>Deletes saved PDF copies, but retains extracted results, history, edits, and verification. PDF preview and re-scan will require re-uploading the originals.</p></div><button id="settingsClearPdfs" type="button" class="ghost">Clear Stored PDFs</button></div>
+ <div class="settings-option danger-option"><div><h3>Reset All Saved Data</h3><p>Deletes saved PDFs, extraction results, history, manual corrections, and verification records. Fresh start. Cannot be undone.</p></div><button id="settingsResetAll" type="button" class="danger-button">Reset All Saved Data</button></div>
+ <p class="settings-footnote">Your original PDF files on your computer are never deleted.</p>
+</dialog>
+<dialog id="confirmDialog" class="settings-dialog confirm-dialog" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+ <div class="dialog-head"><h2 id="confirmTitle">Confirm action</h2><button type="button" class="dialog-close" id="confirmClose" aria-label="Cancel">×</button></div>
+ <p id="confirmMessage"></p>
+ <div class="dialog-actions"><button id="confirmCancel" class="ghost" type="button">Cancel</button><button id="confirmProceed" type="button">Confirm</button></div>
+</dialog>
+<script defer src="js/engine.js"></script>
+<script defer src="js/pdf-reader.js"></script>
+<script defer src="js/storage.js"></script>
+<script defer src="js/excel-export.js"></script>
+<script defer src="js/evidence-locator.js"></script>
+<script defer src="js/evidence-viewer.js"></script>
+<script defer src="js/app.js"></script></body></html>

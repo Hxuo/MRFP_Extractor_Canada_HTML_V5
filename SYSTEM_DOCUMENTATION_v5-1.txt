@@ -1,0 +1,567 @@
+MRFP EXTRACTOR CANADA - BROWSER v5-1
+SYSTEM DOCUMENTATION
+======================================================================
+Document version : 1.0
+Prepared         : November 2, 2026
+System type      : Browser-based Canadian MRFP PDF Data Extraction
+Current baseline : Working v5-1 behavior, built on the existing v5 codebase
+Recommended file location: Project root, beside index.html
+
+NOTE ABOUT THE VERSION:
+The v5-1 improvements were applied as small patches on the v5 project.
+Some existing application labels or filenames may still display "v5".
+"v5-1" in this document refers to the confirmed working functionality,
+including automatic evidence highlighting and orange Search focus boxes.
+
+======================================================================
+1. SYSTEM OVERVIEW
+======================================================================
+MRFP Extractor Canada is a browser-based tool that extracts selected
+financial ratios from Canadian mutual fund and exchange-traded fund (ETF)
+Management Reports of Fund Performance (MRFPs).
+
+The tool is designed to reduce repetitive manual searching and data entry.
+Users can upload original PDFs, review extracted results beside the source
+PDF, check exactly where reported values came from, make corrections when
+necessary, and export structured information for further use.
+
+MAIN OBJECTIVE:
+To help users collect MER, TER, PTR, fund identification, Class/Series,
+and reporting dates efficiently while keeping the original PDF available
+for transparent manual verification.
+
+The system is NOT an unrestricted AI chatbot or a guaranteed financial
+analysis engine. Its primary extraction method is rule-based, FMC-aware
+PDF text and table parsing, assisted by optional OCR where necessary.
+
+======================================================================
+2. FINANCIAL DATA EXTRACTED
+======================================================================
+A. FMC - Fund Management Company
+   Identifies the manager or fund family, such as RBC, Fidelity, BMO,
+   CI, TD, and other supported reporting organizations.
+
+B. Fund Name
+   Identifies the full name of the mutual fund or ETF when recognized.
+
+C. Class / Series
+   Identifies each reported share class, series, or ETF units separately.
+   For example: Series A, Series F, Series FT5, Class O, ETF Series.
+
+D. MER - Management Expense Ratio
+   Generally measures management and other operating expenses as a
+   percentage of average net assets, following the applicable report's
+   definition. The extraction must use the appropriate reported MER,
+   not automatically substitute "MER Before Waivers," "MER Before
+   Absorption," or a "Before Taxes" figure.
+
+   Where a report separately displays MER Before Taxes and MER After
+   Taxes, the after-taxes figure may be the appropriate reported MER;
+   source headings, footnotes, and the applicable FMC format must be
+   validated. Do not assume every FMC uses the same labels.
+
+E. TER - Trading Expense Ratio
+   Reports trading-related expenses as a percentage of average net
+   assets, as disclosed in the original fund report.
+
+F. PTR - Portfolio Turnover Rate
+   Indicates the level of portfolio trading during the reporting period.
+   A higher turnover generally indicates more buying/selling activity;
+   it is not itself a direct measure of profit or performance.
+
+G. MRFP Reporting Date
+   Identifies the report's latest relevant financial reporting period.
+   Date and year selection are important because some PDFs contain
+   multiple annual or interim figures.
+
+MISSING VALUES:
+Missing data are preserved as missing/null rather than silently changed
+to 0. Original source markers such as "--", "n/a", and an em dash may
+also be highlighted for verification. A genuine reported zero (0 or
+0.00) is different from missing data.
+
+======================================================================
+3. TOOLS AND TECHNOLOGIES USED
+======================================================================
+TOOL / TECHNOLOGY         PURPOSE IN THE SYSTEM
+----------------------------------------------------------------------
+HTML                       Builds the page structure: upload controls,
+                           navigation, results table, PDF workspace,
+                           History, Reports, and Settings.
+
+CSS                        Controls appearance, layout, responsive
+                           sizing, buttons, table formatting, and
+                           yellow/orange source evidence boxes.
+
+JavaScript                 Runs application logic, file handling,
+                           extraction coordination, UI updates,
+                           navigation, History actions, and exports.
+
+PDF.js 3.11.174             Bundled PDF processing library. Reads native
+                           PDF text and text positions; renders PDF
+                           pages inside the browser evidence viewer.
+
+HTML Canvas                Draws high-resolution PDF pages. Supports
+                           custom PDF display and coordinate overlays.
+
+Tesseract.js 6              OPTIONAL OCR (Optical Character Recognition)
+                           fallback when a page has insufficient native
+                           text, such as scanned or image-only pages.
+                           The current reader loads this library from
+                           a CDN when OCR is needed; internet access
+                           may therefore be required for OCR.
+
+FMC-specific parsers        Recognize different MRFP layouts and
+                           associate fund names, Class/Series, dates,
+                           and correct MER/TER/PTR ratio cells.
+
+Evidence Locator            Matches extracted ratios to actual source
+                           pages, table rows, column labels, and
+                           PDF.js text coordinates. It does not simply
+                           search for matching numbers anywhere.
+
+Evidence Viewer             Shows the PDF on the right side; supports
+                           automatic source-page navigation, zoom,
+                           scrolling, yellow auto-highlights, and
+                           orange boxed Search focus.
+
+IndexedDB                   Stores saved extraction records, recent
+                           document references, manual corrections,
+                           verification status, and available source
+                           PDFs locally in the browser.
+
+Browser File/Blob APIs      Read selected local PDF files and create
+                           downloadable export files. PDFs do not need
+                           to be uploaded to an application server.
+
+Custom XLSX/OpenXML         Creates an Excel workbook directly in
+exporter                   JavaScript, including two worksheets.
+                           The application also generates CSV outputs.
+
+Node.js + pdfjs-dist        Used for DEVELOPMENT / OFFLINE REGRESSION
+                           TESTING ONLY (batch-test and tests folders),
+                           not required to run the browser application.
+
+Chromium browser testing    Used during controlled visual verification
+                           of page navigation and source highlights.
+----------------------------------------------------------------------
+
+RUNTIME REQUIREMENTS:
+- A supported modern browser, preferably Google Chrome or Microsoft Edge.
+- Keep index.html, css/, js/, and vendor/ in their correct relative paths.
+- No PHP, Python backend, XAMPP, MySQL, or external application database
+  server is required to run the main application.
+- Browser local-file security restrictions may differ by machine.
+- Optional OCR availability depends on its library and language-data
+  resources loading successfully.
+
+======================================================================
+4. MAIN SYSTEM MODULES AND FILE PURPOSES
+======================================================================
+index.html
+  Main application interface and element structure.
+
+css/style.css
+  Application styling, workspace layout, and highlight presentation.
+
+js/app.js
+  Main application controller: batch uploads, displayed results,
+  editing, verification, History interactions, and UI integration.
+
+js/pdf-reader.js
+  Opens PDFs using PDF.js, reads native text and geometric information,
+  and invokes optional OCR on low-text pages when enabled.
+
+js/engine.js
+  Core FMC-aware financial extraction logic. Produces fund/series names,
+  MER, TER, PTR, reporting dates, and related diagnostics.
+
+js/evidence-locator.js
+  Independently identifies source pages and original PDF cells using
+  available labels, dates, table layout, and text coordinates.
+
+js/evidence-viewer.js
+  PDF.js-based high-resolution viewer and source highlighting controls.
+  Displays automatic highlights and Search-focused highlights.
+
+js/storage.js
+  Browser-local IndexedDB storage, retrieval, Recent Documents list,
+  retained PDF management, and reset operations.
+
+js/excel-export.js
+  Creates Excel (.xlsx) and CSV outputs from extracted results.
+
+vendor/pdfjs/
+  Bundled PDF.js script and PDF worker used by the browser.
+
+batch-test/pdfs/
+  Real sample MRFP PDFs used during development and regression testing.
+
+batch-test/ and tests/
+  Offline test runners, fixtures, and regression/validation scripts.
+  These are developer testing resources, not application runtime servers.
+
+======================================================================
+5. MAIN FUNCTIONS AND USER FEATURES
+======================================================================
+1) PDF UPLOAD AND BATCH PROCESSING
+   - Upload a single PDF or up to five PDF files at one time.
+   - The batch is processed sequentially, not all at once.
+   - Each file has its own processing status and extracted results.
+   - Failed files can be retried without mixing their data with others.
+
+2) FMC AND FUND IDENTIFICATION
+   - Detects supported fund managers and fund names from report content.
+   - Does not rely only on filenames or hardcoded fund names.
+
+3) MULTI-SERIES FINANCIAL EXTRACTION
+   - Identifies multiple Classes/Series within the same fund report.
+   - Extracts MER, TER, PTR, and the latest reporting period per record.
+   - Different FMC layouts are handled through recognized parsing rules.
+
+4) SPLIT-SCREEN VERIFICATION
+   - LEFT: extracted financial results and controls.
+   - RIGHT: original PDF viewer with source evidence.
+
+5) AUTOMATIC SOURCE HIGHLIGHTING (v5-1)
+   - After extraction or loading a document with available evidence,
+     original source cells for all reliably mapped series are shown
+     using subtle LIGHT-YELLOW BOXES.
+   - Highlights follow the relevant PDF pages as users scroll.
+   - If evidence spans multiple pages, the viewer starts at the earliest
+     relevant source page when reliable evidence is available.
+
+6) SEARCH-TO-FOCUS (v5-1)
+   - Each Class/Series result row has ONE Search icon beside Edit.
+   - Search navigates to that series' source evidence and emphasizes
+     MER, TER, and PTR with ORANGE BOXES.
+   - Other series remain lightly highlighted yellow.
+   - The highlighted cell must correspond to the correct series,
+     date, ratio label, row, and column.
+
+7) PDF VIEWER CONTROLS
+   - Page navigation, page number input, scrolling, and zoom controls.
+   - High-resolution PDF.js rendering using adaptive canvas resolution.
+   - Rendering/caching is designed to avoid loading every PDF page at
+     full resolution unnecessarily.
+
+8) MANUAL EDITING AND VERIFICATION
+   - Users can correct extracted values and confirm those changes.
+   - Original extracted evidence is preserved separately from edits.
+   - Results are NOT automatically marked Verified by extraction.
+   - Users can explicitly mark reviewed results Verified.
+
+9) RE-SCAN
+   - Reprocesses the selected PDF, with a replacement confirmation.
+   - Refreshes extraction and evidence mapping for the affected record.
+
+10) RECENT DOCUMENTS AND HISTORY
+    - Recent Documents is the current working list.
+    - History contains available previously saved extraction records.
+    - Saved results can be viewed or restored to Recent Documents.
+    - Restore does not need to create a duplicate extraction record.
+    - If the original PDF is missing, results remain viewable but precise
+      PDF evidence highlighting is unavailable.
+
+11) REPORTS AND EXPORTS
+    - Reports page summarizes available saved extraction data.
+    - Export Data: currently selected document.
+    - Export All Listed: all documents in Recent Documents, including
+      restored records.
+    - Export All Data: eligible saved documents in the entire History.
+    - Excel workbooks contain:
+        Sheet 1: Extraction Results (styled header and filters)
+        Sheet 2: Lipper Format (plain headers)
+    - A separate CSV/report CSV output is supported where available.
+      CSV is a single flat text table, NOT a two-sheet workbook.
+
+12) SETTINGS AND DATA MANAGEMENT
+    - Controls such as theme, default page, and optional OCR behavior.
+    - Export/import History backup where provided by the interface.
+    - Clear Stored PDFs: removes retained PDF blobs but keeps results,
+      manual edits, verification status, and History records.
+    - Reset All Saved Data: deletes the application's locally saved
+      documents and related metadata after confirmation.
+    - Clear List: removes items from Recent Documents without deleting
+      the corresponding saved History records.
+
+======================================================================
+6. END-TO-END PROCESS FLOWCHART (TEXT VERSION)
+======================================================================
+
+             +-------------------------+
+             | User opens index.html   |
+             +------------+------------+
+                          |
+                          v
+             +-------------------------+
+             | Select up to 5 PDFs     |
+             +------------+------------+
+                          |
+                          v
+             +-------------------------+
+             | Sequential PDF reading  |
+             | using PDF.js            |
+             +------------+------------+
+                          |
+                          v
+             +-------------------------+
+             | Enough native PDF text? |
+             +------+------------------+
+                    | yes           | no / low text
+                    v               v
+           +----------------+   +------------------+
+           | Use native     |   | Optional OCR     |
+           | text/positions |   | if enabled and   |
+           |                |   | available        |
+           +--------+-------+   +---------+--------+
+                    |                     |
+                    +----------+----------+
+                               |
+                               v
+                 +-------------------------+
+                 | FMC + Fund detection    |
+                 | Class/Series detection  |
+                 +------------+------------+
+                              |
+                              v
+                 +-------------------------+
+                 | Latest reporting-period |
+                 | MER / TER / PTR parsing |
+                 +------------+------------+
+                              |
+                              v
+                 +-------------------------+
+                 | FMC-aware evidence      |
+                 | locator checks source   |
+                 | page, row, and column   |
+                 +------------+------------+
+                              |
+                              v
+                 +-------------------------+
+                 | Display results + PDF   |
+                 | Auto-highlight all      |
+                 | reliable cells (yellow) |
+                 +------------+------------+
+                              |
+                              v
+                 +-------------------------+
+                 | User reviews sources    |
+                 | Search focus = orange   |
+                 +------------+------------+
+                              |
+                              v
+                 +-------------------------+
+                 | Edit / Re-scan if       |
+                 | needed; verify manually |
+                 +------------+------------+
+                              |
+                              v
+                 +-------------------------+
+                 | Save History / Export   |
+                 | Excel or CSV            |
+                 +-------------------------+
+
+IMPORTANT: If OCR fails or the source cell cannot be reliably located,
+show the limitation rather than fabricating a value or highlight.
+
+======================================================================
+7. HOW THE FMC-AWARE EXTRACTION APPROACH WORKS
+======================================================================
+The application uses a HYBRID design:
+
+SHARED PROCESSING FOUNDATION
+  PDF.js reads PDF text, page geometry, and readable content; the
+  application organizes pages for extraction and verification.
+
+FMC-SPECIFIC EXTRACTION RULES
+  Known FMC layouts are interpreted using company-aware rules for
+  recognizing Classes/Series, latest reporting periods, and metrics.
+
+FMC-AWARE EVIDENCE LOCATOR
+  The source locator uses shared matching infrastructure together with
+  specialized layout handling where needed, such as date rows, multiple
+  year columns, repeated values, adjacent alternate-MER metrics, and
+  side-by-side financial tables.
+
+STRICT VALIDATION
+  A candidate source must match its actual fund context, Class/Series,
+  latest date, ratio type, source table, and cell position. Matching the
+  same number somewhere else in the PDF is not enough.
+
+SAFE FAILURE
+  If no trustworthy source location exists, the viewer indicates that
+  exact source location is unavailable. The system should not invent
+  source cells to make visual coverage appear complete.
+
+Examples of FMCs and fund families tested during development include
+RBC, CI, Fidelity, Dynamic, NBI, TD, iShares, Global X, BMO, AGF,
+IG Mackenzie, Mackenzie, Sun Life, Desjardins, Franklin, Vanguard,
+Hamilton, Pender, Scotia, Brandes, NEI, and others.
+
+======================================================================
+8. SCALABILITY AND FUTURE NEW FUNDS / NEW FMCS
+======================================================================
+IS THE SYSTEM SCALABLE?
+Yes, in the sense that the codebase is modular and extensible. It is
+NOT guaranteed to automatically understand every future PDF layout.
+
+SCENARIO A - NEW FUND UNDER A SUPPORTED FMC; SAME REPORT LAYOUT
+The existing FMC rule may automatically recognize the new fund and its
+Classes/Series. The system does not need to know the exact fund name or
+reporting year in advance when the relevant layout is supported.
+
+SCENARIO B - NEW FUND UNDER A SUPPORTED FMC; CHANGED REPORT LAYOUT
+The document can be tested against existing rules. A specialized
+extension or additional layout adapter may be required if columns,
+headers, or page structures differ from the supported format.
+
+SCENARIO C - COMPLETELY NEW FMC
+Shared PDF reading still applies. A generalized parser may identify
+some data, but a new FMC-specific parser and/or evidence-locator adapter
+may be needed for dependable financial extraction and highlighting.
+
+SCALABILITY DESIGN PRINCIPLES:
+- Keep shared PDF reading, storage, exports, and viewer components.
+- Add or refine only the relevant FMC-specific rules where possible.
+- Match actual section labels, series, dates, and cell geometry.
+- Avoid hardcoding specific report filenames, page numbers, ratio
+  values, or years.
+- Handle new layouts cautiously; do not guess missing financial data.
+- Preserve existing working rules when supporting additional FMCs.
+
+PRESENTATION-READY ANSWER (TAGLISH):
+"Yes, scalable po ang system through its modular and FMC-aware
+architecture. Kapag bagong fund under an existing FMC at supported ang
+report layout, kaya itong i-process ng existing rules. Kapag totally
+new layout or new FMC, puwede kaming magdagdag ng specialized parser or
+source locator without rebuilding the whole application. Every change
+is validated through regression testing so existing working FMCs remain
+protected. So scalable siya through extensibility, hindi dahil
+automatic nitong naiintindihan ang lahat ng possible PDFs."
+
+======================================================================
+9. REGRESSION TESTING AND DEVELOPMENT QUALITY CONTROL
+======================================================================
+Before integrating a new FMC or layout:
+  1. Preserve the current working source as a stable baseline.
+  2. Run the existing PDF test set and record current results.
+  3. Independently inspect the new PDF's real ratio tables.
+  4. Identify whether the problem is extraction, evidence location,
+     or viewer rendering; do not change unrelated modules.
+  5. Make narrowly scoped, reusable modifications.
+  6. Run source-cell matching and wrong-match rejection tests.
+  7. Verify actual yellow/orange highlights in a browser when possible.
+  8. Re-run the previous FMC tests and compare before/after outputs.
+  9. Investigate every unexpected change before releasing the patch.
+ 10. Package modified files with exact replacement paths and a test log.
+
+WHAT TO COMPARE:
+- FMC and fund name
+- Class/Series labels and counts
+- Latest MRFP reporting dates
+- MER / TER / PTR values and missing/null states
+- Source pages and source coordinates
+- Correct ratio column and row
+- Search highlighting and automatic page navigation
+- Manual edits, saved History, re-scan, and exports
+
+REGRESSION GOAL:
+Zero unexplained changes to previously working extraction results or
+source mappings. A new FMC adapter should not break old FMC support.
+
+======================================================================
+10. DEVELOPMENT TEST DATASET AND TESTING INTERPRETATION
+======================================================================
+The project used a historical regression dataset consisting of:
+
+  - 120 real MRFP PDF documents
+  - 32 FMC groups in the audit classification
+  - 549 Class/Series records
+  - 1,647 MER / TER / PTR source cells
+
+During the final reported v5 evidence-mapping audit, 1,647 out of 1,647
+source cells were assigned source coordinates for those 120 test PDFs.
+This was a SOURCE-LOCATION COVERAGE result for a fixed test set.
+
+IMPORTANT INTERPRETATION:
+- 100% source-coordinate coverage is NOT the same as 100% financial
+  extraction accuracy.
+- It does NOT prove all future or unseen PDFs will work automatically.
+- It does NOT mean every source cell in all 120 PDFs was visually
+  inspected by a human during every version update.
+- Controlled Chromium visual tests were performed on selected real PDF
+  examples, including multi-series and multi-page cases.
+- The current user's Windows browser operation of v5-1 was confirmed
+  working, but exact behavior may vary across different browsers.
+- The 32 groups are project audit categories, not necessarily 32
+  distinct legally separate fund management companies.
+
+The production system should continue to provide manual review,
+correction, and verification instead of claiming infallible extraction.
+
+======================================================================
+11. DATA STORAGE, PRIVACY, AND PORTABILITY
+======================================================================
+LOCAL FIRST:
+PDFs are processed by the application in the user's browser. The
+provided application does not require sending documents to a custom
+backend server for extraction. History uses browser-local IndexedDB.
+
+STORAGE CONSIDERATIONS:
+- A browser profile, storage reset, or different computer may not share
+  the same saved History automatically.
+- If browser storage is blocked, persistence may be unavailable and
+  the app can fall back to temporary memory for some operations.
+- Save relevant exports and History backups before resetting browser
+  data or transferring to a new device.
+- Clearing retained PDF blobs preserves extraction records but removes
+  the original PDFs needed for source viewing/highlighting.
+
+ONLINE RESOURCE LIMITATION:
+The optional OCR fallback loads Tesseract.js from an external CDN when
+needed. Do not advertise fully offline OCR unless the library and its
+required resources have also been packaged and verified locally.
+
+PORTABILITY:
+Keep the whole working application folder together. It can be copied
+to another machine with a compatible browser, but browser `file://`
+security restrictions, local storage, and OCR resource loading may vary.
+
+======================================================================
+12. KNOWN LIMITATIONS AND RESPONSIBLE USE
+======================================================================
+- New or unusual FMC tables may need additional parsing/locator rules.
+- Some scanned or image-based PDFs may depend on optional OCR.
+- OCR text alone may not provide reliable exact highlight coordinates.
+- Repeated numbers and adjacent alternate MER labels require careful
+  context checks, not simple number matching.
+- Missing source PDFs in History prevent original PDF highlighting.
+- Manual edits do not change what the original PDF actually reported.
+- Current page-counter logic may occasionally show an adjacent page
+  while the correct highlighted content remains visible near a boundary.
+- Browser and operating-system differences can affect PDF rendering
+  and optional resource loading.
+- Results must be reviewed before being treated as final financial data.
+
+======================================================================
+13. QUICK USER GUIDE
+======================================================================
+1. Open the working index.html in a compatible browser.
+2. Upload one to five MRFP PDFs.
+3. Click the extraction action and allow each document to be processed.
+4. Select a completed document in the current list.
+5. Review FMC, Fund, Series, MER, TER, PTR, and reporting date.
+6. Examine the PDF on the right; yellow boxes show all source cells
+   that the evidence locator can confidently identify.
+7. Click the magnifying-glass Search beside a series to focus its
+   original MER/TER/PTR cells in orange boxes.
+8. If a value is incorrect, use Edit; if necessary, Re-scan.
+9. Mark results Verified only after reviewing them.
+10. Export the selected document, Recent Documents list, or saved
+    History as required.
+11. Keep a backup before browser reset or application migration.
+
+======================================================================
+END OF SYSTEM DOCUMENTATION
+======================================================================
