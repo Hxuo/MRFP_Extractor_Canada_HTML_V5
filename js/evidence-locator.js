@@ -1113,6 +1113,108 @@ function nextBatchFmcCell(page,lines,row,key,value){
  return unique.size===1?[...unique.values()][0]:null;
 }
 
+// BMG landscape two-page spreads: PDF.js text runs along +y and the
+// physical table rows progress along +x. Use the exact printed year and
+// metric label. Never select adjacent historical/before-waivers cells.
+function bmgRotatedCell(page,row,key,value){
+ const items=page.items||[],year=Number((row.report_date||'').slice(0,4));
+ if(!year||!/^BMG\s/i.test(row.fund_name||''))return null;
+ const heads=items.filter(it=>{
+  const m=/^THE FUND[’']S NET ASSETS PER (CLASS\s+[A-Z][A-Z0-9-]*)\s+UNITS?$/i.exec(String(it.str||'').replace(/\s+/g,' ').trim());
+  return m&&clean(m[1])===clean(row.class_name);
+ });
+ if(heads.length!==1)return null;
+ const h=heads[0],section=items.filter(it=>/^RATIOS AND SUPPLEMENTAL DATA\s*:/i.test(it.str||'')
+  &&it.x>h.x+45&&it.x<h.x+230&&Math.abs(it.y-h.y)<9);
+ if(section.length!==1)return null;
+ const yearHeads=items.filter(it=>String(it.str||'').trim()===String(year)
+  &&Math.abs(it.x-h.x)<3.5&&it.y>h.y+80&&it.y<h.y+360);
+ if(yearHeads.length!==1)return null;
+ const labels={MER:/^Management expense ratio\s*\(%\)/i,
+  TER:/^Trading expense ratio\s*\(%\)/i,
+  PTR:/^Portfolio turnover rate\s*\(%\)/i};
+ const lab=items.filter(it=>labels[key].test(it.str||'')&&it.x>section[0].x+8
+  &&it.x<section[0].x+56&&Math.abs(it.y-section[0].y)<5);
+ if(lab.length!==1)return null;
+ const candidates=items.filter(it=>Math.abs(it.x-lab[0].x)<1.6&&it.y>=yearHeads[0].y-3
+  &&it.y<yearHeads[0].y+18&&/^(?:\d+(?:\.\d+)?|[—–−-]{1,2}|n\/?a)$/i.test(String(it.str||'').trim()));
+ if(candidates.length!==1)return null;
+ const glyph=candidates[0],raw=glyph.str.trim();
+ const isMissing=/^(?:[—–−-]{1,2}|n\/?a)$/i.test(raw);
+ const actual=isMissing?null:Number(raw);
+ if(value==null?!isMissing:!(Number.isFinite(actual)&&almost(actual,value)))return null;
+ const height=Math.max(5,Number(glyph.h)||6),len=Math.max(1,Number(glyph.w)||0);
+ return {x:glyph.x,y:glyph.y,raw,isMissing,value:actual,
+  box:{x:Math.max(0,glyph.x-height-1),y:Math.max(0,glyph.y-1),w:height+3,h:len+2}};
+}
+// Upright BMG annual/interim Financial Highlights: current year is the first
+// year on the class header; metric cells must be found on their own rows.
+function bmgUprightCell(page,row,key,value){
+ const year=Number((row.report_date||'').slice(0,4));if(!year)return null;
+ const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ const lines=[];
+ for(const it of page.items||[]){
+  if(typeof it.str!=='string'||!it.str.trim()||!Number.isFinite(it.x)||!Number.isFinite(it.y))continue;
+  let l=lines.find(x=>Math.abs(x.y-it.y)<2.4);
+  if(!l){l={y:it.y,items:[]};lines.push(l);}l.items.push(it);
+ }
+ lines.forEach(l=>l.items.sort((a,b)=>a.x-b.x));lines.sort((a,b)=>b.y-a.y);
+ const titleOf=l=>norm(l.items.filter(i=>i.x<300).map(i=>i.str).join(''));
+ const heads=lines.map((l,i)=>{
+  const m=/^THEFUNDSNETASSETSPERCLASS([A-Z][A-Z0-9]*)UNITS?$/.exec(titleOf(l));
+  return m?{cls:'Class '+m[1],index:i,line:l}:null;
+ }).filter(Boolean);
+ const matches=[];
+ for(let i=0;i<heads.length;i++){
+  const head=heads[i];if(clean(head.cls)!==clean(row.class_name))continue;
+  const band=lines.slice(head.index+1,heads[i+1]?.index??lines.length);
+  const titleItems=head.line.items.filter(it=>it.x<300);
+  const titleEnd=Math.max(...titleItems.map(it=>it.x+it.w));
+  const years=head.line.items.filter(it=>it.x>titleEnd+14&&/^\d/.test(it.str)).sort((a,b)=>a.x-b.x);
+  if(!years.length)continue;
+  const start=years[0].x;let last=null,second=null,first=[];
+  for(const it of years){
+   if(last&&it.x-(last.x+last.w)>13){second=it.x;break;}
+   first.push(it.str.replace(/\D/g,''));last=it;
+  }
+  if(first.join('')!==String(year))continue;
+  if(!second)second=start+Math.max(42,Number(page.width||600)*.07);
+  const section=band.filter(l=>/^RATIOSANDSUPPLEMENTALDATA/.test(titleOf(l)));
+  if(section.length!==1)continue;
+  const labels={MER:/^MANAGEMENTEXPENSERATIO(?!BEFORE)/,
+   TER:/^TRADINGEXPENSERATIO/,PTR:/^PORTFOLIOTURNOVERRATE/};
+  const rows=band.filter(l=>l.y<section[0].y-4&&labels[key].test(titleOf(l)));
+  if(rows.length!==1)continue;
+  const parts=rows[0].items.filter(it=>it.x>=start-14&&it.x<start+(second-start)/2)
+   .sort((a,b)=>a.x-b.x);
+  if(!parts.length)continue;
+  const raw=parts.map(it=>it.str.replace(/\s/g,'')).join('');
+  if(!/^(?:\d+(?:\.\d+)?|\.\d+|[—–−-]{1,2}|n\/?a)$/i.test(raw))continue;
+  const missing=/^(?:[—–−-]{1,2}|n\/?a)$/i.test(raw),number=missing?null:Number(raw);
+  if(value==null?!missing:!(Number.isFinite(number)&&almost(number,value)))continue;
+  const x=Math.min(...parts.map(it=>it.x)),right=Math.max(...parts.map(it=>it.x+it.w));
+  const height=Math.max(6,...parts.map(it=>Number(it.h)||6));
+  if(!(right>x))continue;
+  matches.push({x,raw,isMissing:missing,value:number,
+   box:{x:Math.max(0,x-1),y:rows[0].y-1,w:right-x+2,h:height+2}});
+ }
+ return matches.length===1?matches[0]:null;
+}
+function bmgIdentity(pages,row){
+ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(row.report_date||''));
+ if(!m||!/^BMG\s+.{3,120}Fund$/i.test(row.fund_name||''))return false;
+ const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+ const month=months[Number(m[2])-1];if(!month)return false;
+ const rx=new RegExp('(?:period|six.month|year)\\s+ended\\s+'+month+'\\s+'+Number(m[3])+',?\\s+'+m[1],'i');
+ const first=pages.slice(0,5);
+ const docText=first.map(p=>(p.items||[]).map(i=>i.str).join(' ')+' '+(p.text||'')).join(' ');
+ // Validate the fund using a real report title token, not a portfolio holding.
+ const claimed=clean(row.fund_name);
+ const title=first.some(p=>(p.items||[]).some(it=>clean(it.str)===claimed)) ||
+  first.some(p=>String(p.text||'').split(/\r?\n/).some(t=>clean(t)===claimed));
+ return title&&rx.test(docText);
+}
+
 const FMC_DATED_LOCATORS={rbc:datedFmcCell,ci:datedFmcCell};
 function locateInPage(page,row,key,value,{hint=false}={}){
  if(!Array.isArray(page.items)||!page.items.length||page.ocrUsed)return null;
@@ -1124,6 +1226,11 @@ function locateInPage(page,row,key,value,{hint=false}={}){
  function choose(candidates,kind){
   const unique=new Map(candidates.map(m=>[`${m.box.x.toFixed(1)}:${m.box.y.toFixed(1)}`,{...m,page:page.page,metric:key,kind}]));
   return unique.size===1?[...unique.values()][0]:null;
+ }
+ if(row.fmc_key==='bmg'){
+  const rotated=bmgRotatedCell(page,row,key,value);
+  const selected=rotated||bmgUprightCell(page,row,key,value);
+  return selected?{...selected,page:page.page,metric:key,kind:rotated?'bmg-verified-rotated-year-class-ratio-cell':'bmg-verified-upright-year-class-ratio-cell'}:null;
  }
  // Specialized current-year ratio bands for these four FMCs. Any unknown
  // layout fails closed rather than falling through to numeric matching.
@@ -1471,13 +1578,13 @@ function locate(pages,rows){
  const output={version:4,rows:{}};
  for(const row of rows||[]){
   const key=row.row_id||row.class_name;
-  const record={locatorVersion:4,...(['manulife','purpose','newgen','leith_wheeler'].includes(row.fmc_key)?{nextFmcLocatorVersion:1}:{}),...(GAP_FMCS.has(row.fmc_key)?{lastGapLocatorVersion:1}:{}),...(row.fmc_key==='fidelity'?{fidelityLocatorVersion:1}:{}),...(row.fmc_key==='desjardins'?{desjardinsLocatorVersion:1}:{}),...(['pender','scotia'].includes(row.fmc_key)?{penderScotiaLocatorVersion:1}:{}),...(['hamilton','vanguard'].includes(row.fmc_key)?{annualEtfLocatorVersion:1}:{}),...(row.fmc_key==='franklin'?{franklinLocatorVersion:1}:{}),...(row.fmc_key==='lysander'?{lysanderLocatorVersion:1}:{}),...(['brandes','nei'].includes(row.fmc_key)?{brandesNeiLocatorVersion:1}:{}),...(['td','blackrock'].includes(row.fmc_key)?{tdBlackrockLocatorVersion:1}:{}),...(['dynamic','nbi'].includes(row.fmc_key)?{fmcEvidenceVersion:1}:{}),...(['mackenzie','ig_mackenzie'].includes(row.fmc_key)?{mackenzieLocatorVersion:1}:{}),...(['bmo','agf'].includes(row.fmc_key)?{bmoAgfLocatorVersion:1}:{}),pages:sourcePages(row),metrics:{},originalValues:{}};
+  const record={locatorVersion:4,...(row.fmc_key==='bmg'?{bmgLocatorVersion:2}:{}),...(['manulife','purpose','newgen','leith_wheeler'].includes(row.fmc_key)?{nextFmcLocatorVersion:1}:{}),...(GAP_FMCS.has(row.fmc_key)?{lastGapLocatorVersion:1}:{}),...(row.fmc_key==='fidelity'?{fidelityLocatorVersion:1}:{}),...(row.fmc_key==='desjardins'?{desjardinsLocatorVersion:1}:{}),...(['pender','scotia'].includes(row.fmc_key)?{penderScotiaLocatorVersion:1}:{}),...(['hamilton','vanguard'].includes(row.fmc_key)?{annualEtfLocatorVersion:1}:{}),...(row.fmc_key==='franklin'?{franklinLocatorVersion:1}:{}),...(row.fmc_key==='lysander'?{lysanderLocatorVersion:1}:{}),...(['brandes','nei'].includes(row.fmc_key)?{brandesNeiLocatorVersion:1}:{}),...(['td','blackrock'].includes(row.fmc_key)?{tdBlackrockLocatorVersion:1}:{}),...(['dynamic','nbi'].includes(row.fmc_key)?{fmcEvidenceVersion:1}:{}),...(['mackenzie','ig_mackenzie'].includes(row.fmc_key)?{mackenzieLocatorVersion:1}:{}),...(['bmo','agf'].includes(row.fmc_key)?{bmoAgfLocatorVersion:1}:{}),pages:sourcePages(row),metrics:{},originalValues:{}};
   for(const metric of METRICS){
    const value=Object.hasOwn(row.originalValues||{},metric)?row.originalValues[metric]:row[metric];
    record.originalValues[metric]=value??null;
    if(row.evidence?.[metric]?.method==='manual'&&!Object.hasOwn(row.originalValues||{},metric))continue;
    const hinted=row.evidence?.[metric]?.page;
-   const candidates=Number.isInteger(hinted)&&hinted>0?pages.filter(p=>p.page===hinted):pages;
+   const candidates=row.fmc_key==='bmg'&&!bmgIdentity(pages,row)?[]:(Number.isInteger(hinted)&&hinted>0?pages.filter(p=>p.page===hinted):pages);
    const found=[];
    for(const p of candidates){const hit=locateInPage(p,row,metric,value,{hint:!!hinted})||locateLastGap(p,row,metric,value,pages);if(hit)found.push(hit);}
    // When hints are absent, page ambiguity must also fail closed.
